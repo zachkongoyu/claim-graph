@@ -1,12 +1,12 @@
 # Claim Graph - Autonomous RCM Agent
 
-An intelligent Revenue Cycle Management (RCM) agent built with LangGraph and FastAPI. This system processes FHIR-like medical resources, extracts clinical information, assigns medical codes, and generates insurance claims with automated quality validation.
+An intelligent Revenue Cycle Management (RCM) agent built with LangGraph and Robyn. This system processes FHIR-like medical resources, extracts clinical information, assigns medical codes, and generates insurance claims with automated quality validation.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     FastAPI Application                      │
+│                     Robyn Application                        │
 │  ┌──────────┐  ┌──────────┐  ┌─────────────────────┐       │
 │  │  Ingest  │  │ Analyze  │  │  Generate Claim     │       │
 │  │ Endpoint │  │ Endpoint │  │     Endpoint        │       │
@@ -50,8 +50,9 @@ An intelligent Revenue Cycle Management (RCM) agent built with LangGraph and Fas
 - **Multi-Agent Workflow**: LangGraph orchestrates Extractor, Coder, and Auditor agents
 - **Retry Logic**: Automatic retry when audit validation fails
 - **Schema Validation**: Pydantic models ensure FHIR-compliant data structures
-- **RESTful API**: FastAPI endpoints for ingestion, analysis, and claim generation
+- **RESTful API**: Robyn (ASGI) endpoints for ingestion, analysis, and claim generation
 - **Persistent Storage**: SQLite database for FHIR resources and analysis results
+- **Async Support**: Built with AnyIO for efficient async operations
 - **Mock LLM Support**: Development-friendly with mock responses (TODO: add real LLM integration)
 - **Synthetic Data**: Built-in test data generator for end-to-end testing
 
@@ -86,14 +87,24 @@ docker-compose up --build
 
 ## Running the Application
 
-### Using Uvicorn (Local)
+### Using Robyn CLI (Local)
 
 ```bash
 # From the project root
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m app.main
 ```
 
 The API will be available at `http://localhost:8000`
+
+Alternatively, you can use the Robyn CLI directly:
+
+```bash
+# Install Robyn globally if not already installed
+pip install robyn
+
+# Run the application
+python app/main.py
+```
 
 ### Using Docker Compose
 
@@ -102,12 +113,6 @@ docker-compose up
 ```
 
 The API will be available at `http://localhost:8000`
-
-### Interactive API Documentation
-
-Once running, visit:
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
 
 ## API Endpoints
 
@@ -277,12 +282,12 @@ pytest tests/test_api.py -v
 ```
 claim-graph/
 ├── app/
-│   ├── api/                    # FastAPI route handlers
-│   │   ├── ingest.py          # POST /api/v1/ingest
-│   │   ├── analyze.py         # POST /api/v1/analyze
-│   │   └── generate_claim.py  # POST /api/v1/generate-claim
+│   ├── api/                    # API route handlers (legacy FastAPI structure)
+│   │   ├── ingest.py          # POST /api/v1/ingest (now in main.py)
+│   │   ├── analyze.py         # POST /api/v1/analyze (now in main.py)
+│   │   └── generate_claim.py  # POST /api/v1/generate-claim (now in main.py)
 │   ├── database/              # Database layer
-│   │   ├── db.py             # SQLAlchemy setup
+│   │   ├── db.py             # SQLAlchemy setup with AnyIO
 │   │   └── crud.py           # CRUD operations
 │   ├── graph/                 # LangGraph workflow
 │   │   ├── nodes.py          # Extractor, Coder, Auditor nodes
@@ -295,7 +300,7 @@ claim-graph/
 │   │   ├── llm_mock.py       # Mock LLM responses
 │   │   └── synthetic_data.py # Test data generator
 │   ├── config.py              # Application configuration
-│   └── main.py                # FastAPI application
+│   └── main.py                # Robyn application (all endpoints)
 ├── tests/                     # Test suite
 │   ├── conftest.py           # Pytest fixtures
 │   ├── test_api.py           # API endpoint tests
@@ -374,6 +379,15 @@ The current implementation uses mock LLM responses. To integrate a real LLM prov
 - [ ] **Export Formats**: Support for X12 837 claim format
 - [ ] **Batch Processing**: Process multiple patient records
 - [ ] **Reporting**: Analytics dashboard for coding patterns
+
+## Migration Notes
+
+This project has been migrated from FastAPI to Robyn + AnyIO:
+- **Framework**: FastAPI → Robyn (ASGI framework)
+- **Async Runtime**: Uvicorn → AnyIO
+- **API Documentation**: Swagger/ReDoc not available (Robyn doesn't have built-in docs)
+- **Dependency Injection**: FastAPI's DI system removed; using direct async context managers
+- **Testing**: Custom mock client for Robyn endpoints
 
 ## Contributing
 

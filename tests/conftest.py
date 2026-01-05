@@ -5,12 +5,13 @@ from typing import AsyncGenerator
 import httpx
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from app.main import app
-from app.database.db import Base, get_session
+from app.database.db import Base
+import os
+import json
+from unittest.mock import AsyncMock, MagicMock
 
-
-# Test database URL
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+# Test database URL - use file-based database for sharing across connections
+TEST_DATABASE_URL = "sqlite+aiosqlite:///./data/test_claim_graph.db"
 
 
 @pytest.fixture(scope="session")
@@ -24,16 +25,22 @@ def event_loop():
 @pytest.fixture
 async def test_db() -> AsyncGenerator[AsyncSession, None]:
     """Create a test database session."""
+    # Set test database URL in environment
+    os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+    
+    # Ensure data directory exists for file-based databases
+    os.makedirs("./data", exist_ok=True)
+    
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
-    async_session = async_sessionmaker(
+    test_session_maker = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
     
-    async with async_session() as session:
+    async with test_session_maker() as session:
         yield session
     
     async with engine.begin() as conn:
@@ -42,17 +49,98 @@ async def test_db() -> AsyncGenerator[AsyncSession, None]:
     await engine.dispose()
 
 
+class MockRobynClient:
+    """Mock client for testing Robyn endpoints."""
+    
+    def __init__(self, base_url: str = "http://test"):
+        self.base_url = base_url
+    
+    async def get(self, path: str):
+        """Mock GET request."""
+        from app.main import root, health
+        
+        request = MagicMock()
+        
+        if path == "/":
+            response = await root(request)
+        elif path == "/health":
+            response = await health(request)
+        else:
+            return MockResponse(404, {"detail": "Not found"})
+        
+        # Handle Response object from Robyn
+        if hasattr(response, 'description'):
+            return MockResponse(response.status_code, json_module.loads(response.description))
+        return MockResponse(200, response)
+    
+    async def post(self, path: str, json: dict = None):
+        """Mock POST request."""
+        from app.main import ingest_resources, analyze_resources, generate_claim_endpoint
+        
+        request = MagicMock()
+        request.body = json_module.dumps(json) if json else "{}"
+        
+        try:
+            if path == "/api/v1/ingest":
+                response = await ingest_resources(request)
+            elif path == "/api/v1/analyze":
+                response = await analyze_resources(request)
+            elif path == "/api/v1/generate-claim":
+                response = await generate_claim_endpoint(request)
+            else:
+                return MockResponse(404, {"detail": "Not found"})
+            
+            # Handle Response object from Robyn
+            if hasattr(response, 'description'):
+                return MockResponse(response.status_code, json_module.loads(response.description))
+            return MockResponse(200, response)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return MockResponse(500, {"detail": str(e)})
+
+
+class MockResponse:
+    """Mock response object."""
+    
+    def __init__(self, status_code: int, data: dict):
+        self.status_code = status_code
+        self._data = data
+    
+    def json(self):
+        """Return JSON data."""
+        return self._data
+
+
+import json as json_module
+
+
 @pytest.fixture
-async def client(test_db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """Create a test client with database override."""
-    from fastapi.testclient import TestClient
+async def client(test_db: AsyncSession) -> AsyncGenerator[MockRobynClient, None]:
+    """
+    Create a mock test client for Robyn app.
     
-    async def override_get_session():
-        yield test_db
+    Since Robyn doesn't have built-in test client support like FastAPI,
+    we create a mock client that calls the endpoint functions directly.
+    """
+    # Set environment variable BEFORE any imports
+    os.environ["DATABASE_URL"] = TEST_DATABASE_URL
     
-    app.dependency_overrides[get_session] = override_get_session
+    # Ensure data directory exists
+    os.makedirs("./data", exist_ok=True)
     
-    async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
+    # Force reload of database module to pick up new DATABASE_URL
+    import importlib
+    import sys
     
-    app.dependency_overrides.clear()
+    # Clear cached modules to ensure fresh imports with new DATABASE_URL
+    for module_name in list(sys.modules.keys()):
+        if module_name.startswith('app.'):
+            del sys.modules[module_name]
+    
+    # Now import and initialize database with test URL
+    from app.database.db import init_db
+    await init_db()
+    
+    mock_client = MockRobynClient()
+    yield mock_client
