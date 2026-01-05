@@ -60,22 +60,30 @@ def shutdown():
 @app.get("/")
 async def root(request: Request):
     """Root endpoint."""
-    return jsonify({
-        "name": settings.app_name,
-        "version": settings.app_version,
-        "status": "running",
-        "endpoints": {
-            "ingest": "/api/v1/ingest",
-            "analyze": "/api/v1/analyze",
-            "generate_claim": "/api/v1/generate-claim",
-        },
-    }, headers=CORS_HEADERS)
+    return Response(
+        status_code=200,
+        headers=CORS_HEADERS,
+        description=jsonify({
+            "name": settings.app_name,
+            "version": settings.app_version,
+            "status": "running",
+            "endpoints": {
+                "ingest": "/api/v1/ingest",
+                "analyze": "/api/v1/analyze",
+                "generate_claim": "/api/v1/generate-claim",
+            },
+        })
+    )
 
 
 @app.get("/health")
 async def health(request: Request):
     """Health check endpoint."""
-    return jsonify({"status": "healthy"}, headers=CORS_HEADERS)
+    return Response(
+        status_code=200,
+        headers=CORS_HEADERS,
+        description=jsonify({"status": "healthy"})
+    )
 
 
 @app.post("/api/v1/ingest")
@@ -136,25 +144,29 @@ async def ingest_resources(request: Request):
         
         await store_resources()
         
-        return jsonify({
-            "success": True,
-            "message": f"Successfully ingested {len(resource_ids)} resources",
-            "resource_ids": resource_ids,
-        }, headers=CORS_HEADERS)
+        return Response(
+            status_code=200,
+            headers=CORS_HEADERS,
+            description=jsonify({
+                "success": True,
+                "message": f"Successfully ingested {len(resource_ids)} resources",
+                "resource_ids": resource_ids,
+            })
+        )
     
     except ValidationError as e:
         logger.error(f"Validation error: {e}")
         return Response(
             status_code=400,
             headers=CORS_HEADERS,
-            description=json.dumps({"detail": str(e)}),
+            description=jsonify({"detail": str(e)}),
         )
     except Exception as e:
         logger.error(f"Error ingesting resources: {e}")
         return Response(
             status_code=500,
             headers=CORS_HEADERS,
-            description=json.dumps({"detail": str(e)}),
+            description=jsonify({"detail": str(e)}),
         )
 
 
@@ -209,24 +221,28 @@ async def analyze_resources(request: Request):
             return Response(
                 status_code=500,
                 headers=CORS_HEADERS,
-                description=json.dumps({"detail": error}),
+                description=jsonify({"detail": error}),
             )
         
-        return jsonify({
-            "success": True,
-            "message": "Analysis completed successfully",
-            "extracted_data": extracted_data.model_dump() if extracted_data else None,
-            "coded_data": coded_data.model_dump() if coded_data else None,
-            "audit_result": audit_result.model_dump() if audit_result else None,
-            "retry_count": retry_count,
-        }, headers=CORS_HEADERS)
+        return Response(
+            status_code=200,
+            headers=CORS_HEADERS,
+            description=jsonify({
+                "success": True,
+                "message": "Analysis completed successfully",
+                "extracted_data": extracted_data.model_dump() if extracted_data else None,
+                "coded_data": coded_data.model_dump() if coded_data else None,
+                "audit_result": audit_result.model_dump() if audit_result else None,
+                "retry_count": retry_count,
+            })
+        )
     
     except Exception as e:
         logger.error(f"Error during analysis: {e}")
         return Response(
             status_code=500,
             headers=CORS_HEADERS,
-            description=json.dumps({"detail": str(e)}),
+            description=jsonify({"detail": str(e)}),
         )
 
 
@@ -258,7 +274,7 @@ async def generate_claim_endpoint(request: Request):
             return Response(
                 status_code=404,
                 headers=CORS_HEADERS,
-                description=json.dumps({
+                description=jsonify({
                     "detail": "No analysis results found. Please run /analyze first."
                 }),
             )
@@ -339,18 +355,22 @@ async def generate_claim_endpoint(request: Request):
         
         logger.info(f"Generated claim {claim.id} with {len(items)} items")
         
-        return jsonify({
-            "success": True,
-            "message": f"Successfully generated claim with {len(items)} items",
-            "claim": claim.model_dump(mode='json'),
-        }, headers=CORS_HEADERS)
+        return Response(
+            status_code=200,
+            headers=CORS_HEADERS,
+            description=jsonify({
+                "success": True,
+                "message": f"Successfully generated claim with {len(items)} items",
+                "claim": claim.model_dump(mode='json'),
+            })
+        )
     
     except Exception as e:
         logger.error(f"Error generating claim: {e}")
         return Response(
             status_code=500,
             headers=CORS_HEADERS,
-            description=json.dumps({"detail": str(e)}),
+            description=jsonify({"detail": str(e)}),
         )
 
 

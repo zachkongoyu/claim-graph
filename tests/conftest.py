@@ -28,6 +28,9 @@ async def test_db() -> AsyncGenerator[AsyncSession, None]:
     # Set test database URL in environment before importing app
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
     
+    # Ensure data directory exists for file-based databases
+    os.makedirs("./data", exist_ok=True)
+    
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     
     async with engine.begin() as conn:
@@ -59,16 +62,19 @@ class MockRobynClient:
         """Mock GET request."""
         from app.main import root, health
         
-        if path == "/":
-            request = MagicMock()
-            response = await root(request)
-            return MockResponse(200, response.body if hasattr(response, 'body') else response)
-        elif path == "/health":
-            request = MagicMock()
-            response = await health(request)
-            return MockResponse(200, response.body if hasattr(response, 'body') else response)
+        request = MagicMock()
         
-        return MockResponse(404, {"detail": "Not found"})
+        if path == "/":
+            response = await root(request)
+        elif path == "/health":
+            response = await health(request)
+        else:
+            return MockResponse(404, {"detail": "Not found"})
+        
+        # Handle Response object from Robyn
+        if hasattr(response, 'description'):
+            return MockResponse(response.status_code, json_module.loads(response.description))
+        return MockResponse(200, response)
     
     async def post(self, path: str, json: dict = None):
         """Mock POST request."""
@@ -87,14 +93,13 @@ class MockRobynClient:
             else:
                 return MockResponse(404, {"detail": "Not found"})
             
-            # Handle different response types
-            if hasattr(response, 'body'):
-                return MockResponse(getattr(response, 'status_code', 200), json_module.loads(response.body))
-            elif hasattr(response, 'status_code'):
+            # Handle Response object from Robyn
+            if hasattr(response, 'description'):
                 return MockResponse(response.status_code, json_module.loads(response.description))
-            else:
-                return MockResponse(200, response)
+            return MockResponse(200, response)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return MockResponse(500, {"detail": str(e)})
 
 
@@ -123,6 +128,13 @@ async def client(test_db: AsyncSession) -> AsyncGenerator[MockRobynClient, None]
     """
     # Ensure test database is being used
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+    
+    # Ensure data directory exists
+    os.makedirs("./data", exist_ok=True)
+    
+    # Initialize database tables
+    from app.database.db import init_db
+    await init_db()
     
     mock_client = MockRobynClient()
     yield mock_client
