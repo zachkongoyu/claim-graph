@@ -1,0 +1,28 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - ./data:/app/data
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///data/claim_graph.db
+      - LOG_LEVEL=INFO
+    depends_on:
+      - db
+
+  db:
+    image: alpine:latest
+    volumes:
+      - ./data:/data
+    command: sh -c "mkdir -p /data && tail -f /dev/null"
+
+# TODO: Add HAPI-FHIR service integration
+# Future services:
+#   fhir-server:
+#     image: hapiproject/hapi:latest
+#     ports:
+#       - "8080:8080"
+#     environment:
+#       - hapi.fhir.server_address=http://localhost:8080/fhir
