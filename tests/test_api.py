@@ -31,7 +31,7 @@ async def test_ingest_endpoint(client: AsyncClient):
     
     response = await client.post(
         "/api/v1/ingest",
-        json=dataset.model_dump(),
+        json=dataset.model_dump(mode='json'),
     )
     
     assert response.status_code == 200
@@ -47,7 +47,7 @@ async def test_analyze_endpoint(client: AsyncClient):
     dataset = generate_minimal_dataset()
     ingest_response = await client.post(
         "/api/v1/ingest",
-        json=dataset.model_dump(),
+        json=dataset.model_dump(mode='json'),
     )
     assert ingest_response.status_code == 200
     resource_ids = ingest_response.json()["resource_ids"]
@@ -73,7 +73,7 @@ async def test_generate_claim_endpoint(client: AsyncClient):
     dataset = generate_minimal_dataset()
     ingest_response = await client.post(
         "/api/v1/ingest",
-        json=dataset.model_dump(),
+        json=dataset.model_dump(mode='json'),
     )
     resource_ids = ingest_response.json()["resource_ids"]
     
@@ -115,7 +115,7 @@ async def test_full_workflow(client: AsyncClient):
     dataset = generate_minimal_dataset()
     ingest_response = await client.post(
         "/api/v1/ingest",
-        json=dataset.model_dump(),
+        json=dataset.model_dump(mode='json'),
     )
     assert ingest_response.status_code == 200
     resource_ids = ingest_response.json()["resource_ids"]

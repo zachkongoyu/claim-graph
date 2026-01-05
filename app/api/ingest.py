@@ -39,7 +39,7 @@ async def ingest_resources(
                 db=db,
                 resource_id=resource_id,
                 resource_type="Condition",
-                data=condition.model_dump(),
+                data=condition.model_dump(mode='json'),
             )
             resource_ids.append(resource_id)
             logger.info(f"Stored condition: {resource_id}")
@@ -51,7 +51,7 @@ async def ingest_resources(
                 db=db,
                 resource_id=resource_id,
                 resource_type="Procedure",
-                data=procedure.model_dump(),
+                data=procedure.model_dump(mode='json'),
             )
             resource_ids.append(resource_id)
             logger.info(f"Stored procedure: {resource_id}")
@@ -63,7 +63,7 @@ async def ingest_resources(
                 db=db,
                 resource_id=resource_id,
                 resource_type="Observation",
-                data=observation.model_dump(),
+                data=observation.model_dump(mode='json'),
             )
             resource_ids.append(resource_id)
             logger.info(f"Stored observation: {resource_id}")
