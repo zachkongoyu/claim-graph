@@ -10,8 +10,8 @@ import os
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-# Test database URL
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+# Test database URL - use file-based database for sharing across connections
+TEST_DATABASE_URL = "sqlite+aiosqlite:///./data/test_claim_graph.db"
 
 
 @pytest.fixture(scope="session")
@@ -25,7 +25,7 @@ def event_loop():
 @pytest.fixture
 async def test_db() -> AsyncGenerator[AsyncSession, None]:
     """Create a test database session."""
-    # Set test database URL in environment before importing app
+    # Set test database URL in environment
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
     
     # Ensure data directory exists for file-based databases
@@ -54,9 +54,6 @@ class MockRobynClient:
     
     def __init__(self, base_url: str = "http://test"):
         self.base_url = base_url
-        # Import endpoints after environment is set
-        from app import main
-        self.app_module = main
     
     async def get(self, path: str):
         """Mock GET request."""
@@ -126,13 +123,22 @@ async def client(test_db: AsyncSession) -> AsyncGenerator[MockRobynClient, None]
     Since Robyn doesn't have built-in test client support like FastAPI,
     we create a mock client that calls the endpoint functions directly.
     """
-    # Ensure test database is being used
+    # Set environment variable BEFORE any imports
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
     
     # Ensure data directory exists
     os.makedirs("./data", exist_ok=True)
     
-    # Initialize database tables
+    # Force reload of database module to pick up new DATABASE_URL
+    import importlib
+    import sys
+    
+    # Clear cached modules to ensure fresh imports with new DATABASE_URL
+    for module_name in list(sys.modules.keys()):
+        if module_name.startswith('app.'):
+            del sys.modules[module_name]
+    
+    # Now import and initialize database with test URL
     from app.database.db import init_db
     await init_db()
     
