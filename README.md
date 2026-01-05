@@ -1,1 +1,392 @@
-# claim-graph
+# Claim Graph - Autonomous RCM Agent
+
+An intelligent Revenue Cycle Management (RCM) agent built with LangGraph and FastAPI. This system processes FHIR-like medical resources, extracts clinical information, assigns medical codes, and generates insurance claims with automated quality validation.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     FastAPI Application                      │
+│  ┌──────────┐  ┌──────────┐  ┌─────────────────────┐       │
+│  │  Ingest  │  │ Analyze  │  │  Generate Claim     │       │
+│  │ Endpoint │  │ Endpoint │  │     Endpoint        │       │
+│  └────┬─────┘  └────┬─────┘  └──────────┬──────────┘       │
+└───────┼─────────────┼────────────────────┼──────────────────┘
+        │             │                    │
+        ▼             ▼                    ▼
+   ┌────────────────────────────────────────────┐
+   │           SQLite Database                  │
+   │  (FHIR Resources + Analysis Results)       │
+   └────────────────┬───────────────────────────┘
+                    │
+                    ▼
+   ┌────────────────────────────────────────────┐
+   │         LangGraph Workflow                 │
+   │                                            │
+   │  ┌──────────────────────────────────┐     │
+   │  │        Supervisor Router         │     │
+   │  └────────┬─────────────────────────┘     │
+   │           │                                │
+   │  ┌────────▼─────────┐                     │
+   │  │    Extractor     │                     │
+   │  │  (Extract data)  │                     │
+   │  └────────┬─────────┘                     │
+   │           │                                │
+   │  ┌────────▼─────────┐                     │
+   │  │      Coder       │◄───┐                │
+   │  │  (Assign codes)  │    │ Retry Loop     │
+   │  └────────┬─────────┘    │                │
+   │           │               │                │
+   │  ┌────────▼─────────┐    │                │
+   │  │     Auditor      │────┘                │
+   │  │  (Validate)      │ (on failure)        │
+   │  └──────────────────┘                     │
+   │                                            │
+   └────────────────────────────────────────────┘
+```
+
+## Features
+
+- **Multi-Agent Workflow**: LangGraph orchestrates Extractor, Coder, and Auditor agents
+- **Retry Logic**: Automatic retry when audit validation fails
+- **Schema Validation**: Pydantic models ensure FHIR-compliant data structures
+- **RESTful API**: FastAPI endpoints for ingestion, analysis, and claim generation
+- **Persistent Storage**: SQLite database for FHIR resources and analysis results
+- **Mock LLM Support**: Development-friendly with mock responses (TODO: add real LLM integration)
+- **Synthetic Data**: Built-in test data generator for end-to-end testing
+
+## Prerequisites
+
+- Python 3.11 or higher
+- Docker and Docker Compose (optional, for containerized deployment)
+
+## Installation
+
+### Local Development
+
+```bash
+# Clone the repository
+git clone https://github.com/zachkongoyu/claim-graph.git
+cd claim-graph
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Docker Deployment
+
+```bash
+# Build and run with Docker Compose
+docker-compose up --build
+```
+
+## Running the Application
+
+### Using Uvicorn (Local)
+
+```bash
+# From the project root
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+The API will be available at `http://localhost:8000`
+
+### Using Docker Compose
+
+```bash
+docker-compose up
+```
+
+The API will be available at `http://localhost:8000`
+
+### Interactive API Documentation
+
+Once running, visit:
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+## API Endpoints
+
+### 1. POST /api/v1/ingest
+
+Ingest FHIR-like resources (Conditions, Procedures, Observations) into the database.
+
+**Request:**
+```bash
+curl -X POST "http://localhost:8000/api/v1/ingest" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "conditions": [
+      {
+        "id": "condition-1",
+        "code": {
+          "coding": [{"system": "http://snomed.info/sct", "code": "73211009", "display": "Diabetes mellitus"}],
+          "text": "Type 2 Diabetes"
+        },
+        "subject": {"reference": "Patient/patient-123"}
+      }
+    ],
+    "procedures": [
+      {
+        "id": "procedure-1",
+        "code": {
+          "coding": [{"system": "http://snomed.info/sct", "code": "33747003", "display": "Glucose monitoring"}],
+          "text": "Blood glucose test"
+        },
+        "subject": {"reference": "Patient/patient-123"}
+      }
+    ],
+    "observations": [
+      {
+        "id": "observation-1",
+        "code": {
+          "coding": [{"system": "http://loinc.org", "code": "4548-4", "display": "HbA1c"}],
+          "text": "Hemoglobin A1c"
+        },
+        "subject": {"reference": "Patient/patient-123"},
+        "valueString": "7.8%"
+      }
+    ]
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully ingested 3 resources",
+  "resource_ids": ["condition-1", "procedure-1", "observation-1"]
+}
+```
+
+### 2. POST /api/v1/analyze
+
+Run the LangGraph workflow to extract, code, and audit medical data.
+
+**Request:**
+```bash
+curl -X POST "http://localhost:8000/api/v1/analyze" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resource_ids": ["condition-1", "procedure-1", "observation-1"],
+    "max_retries": 3
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Analysis completed successfully",
+  "extracted_data": {
+    "diagnoses": ["Type 2 Diabetes Mellitus", "Hypertension"],
+    "procedures": ["Blood glucose monitoring"],
+    "observations": ["HbA1c elevated at 7.8%"],
+    "patient_id": "patient-123"
+  },
+  "coded_data": {
+    "icd10_codes": ["E11.9", "I10"],
+    "cpt_codes": ["82947", "99213"],
+    "loinc_codes": ["4548-4"]
+  },
+  "audit_result": {
+    "passed": true,
+    "issues": [],
+    "severity": "low",
+    "recommendations": ["Consider follow-up in 3 months"]
+  },
+  "retry_count": 0
+}
+```
+
+### 3. POST /api/v1/generate-claim
+
+Generate a FHIR Claim resource from the latest analysis results.
+
+**Request:**
+```bash
+curl -X POST "http://localhost:8000/api/v1/generate-claim" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "patient_id": "patient-123",
+    "provider_id": "provider-456"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully generated claim with 2 items",
+  "claim": {
+    "resourceType": "Claim",
+    "id": "claim-20260105152430",
+    "status": "active",
+    "type": {
+      "coding": [{
+        "system": "http://terminology.hl7.org/CodeSystem/claim-type",
+        "code": "institutional"
+      }]
+    },
+    "patient": {
+      "reference": "Patient/patient-123"
+    },
+    "diagnosis": [
+      {
+        "sequence": 1,
+        "diagnosisCodeableConcept": {
+          "coding": [{"system": "http://hl7.org/fhir/sid/icd-10", "code": "E11.9"}]
+        }
+      }
+    ],
+    "item": [
+      {
+        "sequence": 1,
+        "productOrService": {
+          "coding": [{"system": "http://www.ama-assn.org/go/cpt", "code": "82947"}]
+        },
+        "unitPrice": {"value": 100.0, "currency": "USD"}
+      }
+    ],
+    "total": {"value": 250.0, "currency": "USD"}
+  }
+}
+```
+
+## Testing
+
+Run the test suite:
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=app --cov-report=html
+
+# Run specific test file
+pytest tests/test_api.py -v
+```
+
+## Project Structure
+
+```
+claim-graph/
+├── app/
+│   ├── api/                    # FastAPI route handlers
+│   │   ├── ingest.py          # POST /api/v1/ingest
+│   │   ├── analyze.py         # POST /api/v1/analyze
+│   │   └── generate_claim.py  # POST /api/v1/generate-claim
+│   ├── database/              # Database layer
+│   │   ├── db.py             # SQLAlchemy setup
+│   │   └── crud.py           # CRUD operations
+│   ├── graph/                 # LangGraph workflow
+│   │   ├── nodes.py          # Extractor, Coder, Auditor nodes
+│   │   ├── supervisor.py     # Supervisor router
+│   │   └── graph.py          # Graph definition
+│   ├── models/                # Pydantic models
+│   │   ├── fhir_models.py    # FHIR-like resources
+│   │   └── graph_state.py    # LangGraph state
+│   ├── utils/                 # Utilities
+│   │   ├── llm_mock.py       # Mock LLM responses
+│   │   └── synthetic_data.py # Test data generator
+│   ├── config.py              # Application configuration
+│   └── main.py                # FastAPI application
+├── tests/                     # Test suite
+│   ├── conftest.py           # Pytest fixtures
+│   ├── test_api.py           # API endpoint tests
+│   ├── test_router.py        # Router logic tests
+│   └── test_schemas.py       # Schema validation tests
+├── docker-compose.yml         # Docker Compose configuration
+├── Dockerfile                 # Docker image definition
+├── pyproject.toml            # Project metadata and dependencies
+├── requirements.txt          # Python dependencies
+└── README.md                 # This file
+```
+
+## Development
+
+### Code Formatting
+
+```bash
+# Format code with Black
+black app/ tests/
+
+# Lint with Ruff
+ruff check app/ tests/
+```
+
+### Adding Real LLM Integration
+
+The current implementation uses mock LLM responses. To integrate a real LLM provider:
+
+1. **Install provider SDK:**
+   ```bash
+   pip install openai  # or anthropic, langchain-openai, etc.
+   ```
+
+2. **Update `app/utils/llm_mock.py`** with actual LLM calls
+
+3. **Configure API keys** in environment variables or `.env` file:
+   ```bash
+   OPENAI_API_KEY=your-key-here
+   ```
+
+4. **Use instructor for structured outputs:**
+   ```python
+   import instructor
+   from openai import OpenAI
+   
+   client = instructor.from_openai(OpenAI())
+   
+   result = client.chat.completions.create(
+       model="gpt-4",
+       response_model=ExtractedData,
+       messages=[{"role": "user", "content": prompt}]
+   )
+   ```
+
+## Roadmap and TODOs
+
+### High Priority
+- [ ] **LLM Integration**: Replace mock responses with OpenAI/Anthropic
+- [ ] **Instructor Integration**: Add structured output validation with retry
+- [ ] **Enhanced Audit Logic**: Implement comprehensive validation rules
+- [ ] **FHIR Server Integration**: Connect to HAPI-FHIR server
+  - Update docker-compose.yml to include HAPI-FHIR service
+  - Add FHIR client for resource retrieval
+  - Implement resource synchronization
+
+### Medium Priority
+- [ ] **Payer Simulator**: Add mock payer API for claim submission testing
+- [ ] **Authentication**: Add API key or OAuth2 authentication
+- [ ] **Rate Limiting**: Implement API rate limits
+- [ ] **Async Processing**: Add background task queue for long-running analyses
+- [ ] **Metrics/Monitoring**: Add Prometheus metrics and health checks
+- [ ] **Error Handling**: Enhanced error responses and logging
+
+### Low Priority
+- [ ] **Web UI**: Simple frontend for visualization
+- [ ] **Export Formats**: Support for X12 837 claim format
+- [ ] **Batch Processing**: Process multiple patient records
+- [ ] **Reporting**: Analytics dashboard for coding patterns
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License.
+
+## Contact
+
+For questions or support, please open an issue on GitHub.
