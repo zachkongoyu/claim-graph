@@ -83,6 +83,148 @@ The agent should support the following R4 resources end-to-end, covering clinica
 3) Generate Claim resources with line items, charges, and provider info
 4) Validate against payer rules and produce ClaimResponse adjudication
 
+## End-to-End Sample Dataset (Synthetic)
+
+Single-patient example showing connected resources from demographics through adjudicated claim.
+
+### Patient (Demographics)
+```json
+{
+  "resourceType": "Patient",
+  "id": "patient-123",
+  "name": [{ "family": "Doe", "given": ["John"] }],
+  "gender": "male",
+  "birthDate": "2003-03-20",
+  "address": [{ "city": "Boston", "state": "MA", "country": "USA" }],
+  "communication": [{ "language": { "coding": [{ "code": "en-US" }] } }]
+}
+```
+
+### Coverage (Insurance)
+```json
+{
+  "resourceType": "Coverage",
+  "id": "coverage-789",
+  "status": "active",
+  "subscriberId": "SUB-456789",
+  "payor": [{ "reference": "Organization/insurer-001" }],
+  "period": { "start": "2025-01-01", "end": "2026-12-31" }
+}
+```
+
+### Encounter (Visit)
+```json
+{
+  "resourceType": "Encounter",
+  "id": "encounter-001",
+  "status": "finished",
+  "class": { "code": "AMB" },
+  "type": [{ "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "AMB", "display": "Ambulatory" }] }],
+  "subject": { "reference": "Patient/patient-123" },
+  "period": { "start": "2026-01-05T10:00:00Z", "end": "2026-01-05T11:00:00Z" },
+  "participant": [{ "individual": { "reference": "Practitioner/practitioner-456" } }]
+}
+```
+
+### Condition (Diagnosis)
+```json
+{
+  "resourceType": "Condition",
+  "id": "condition-001",
+  "clinicalStatus": { "coding": [{ "code": "active" }] },
+  "verificationStatus": { "coding": [{ "code": "confirmed" }] },
+  "code": { "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "F32.1", "display": "Major depressive disorder, single episode, moderate" }] },
+  "subject": { "reference": "Patient/patient-123" },
+  "onsetDateTime": "2026-01-05"
+}
+```
+
+### Procedure (Service Performed)
+```json
+{
+  "resourceType": "Procedure",
+  "id": "procedure-001",
+  "status": "completed",
+  "code": { "coding": [{ "system": "http://www.ama-assn.org/cpt", "code": "90834", "display": "Psychotherapy, 45 minutes" }] },
+  "subject": { "reference": "Patient/patient-123" },
+  "performedDateTime": "2026-01-05T10:15:00Z",
+  "performer": [{ "actor": { "reference": "Practitioner/practitioner-456" } }]
+}
+```
+
+### MedicationRequest
+```json
+{
+  "resourceType": "MedicationRequest",
+  "id": "med-001",
+  "status": "active",
+  "intent": "order",
+  "medicationCodeableConcept": { "coding": [{ "system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "161", "display": "Acetaminophen 325 mg oral tablet" }] },
+  "subject": { "reference": "Patient/patient-123" },
+  "authoredOn": "2026-01-05",
+  "dosageInstruction": [{ "text": "Take 1 tablet every 6 hours as needed for pain" }]
+}
+```
+
+### Observation (Lab Result)
+```json
+{
+  "resourceType": "Observation",
+  "id": "obs-001",
+  "status": "final",
+  "code": { "coding": [{ "system": "http://loinc.org", "code": "718-7", "display": "Hemoglobin [Mass/volume] in Blood" }] },
+  "subject": { "reference": "Patient/patient-123" },
+  "effectiveDateTime": "2026-01-05T09:30:00Z",
+  "valueQuantity": { "value": 14.2, "unit": "g/dL" }
+}
+```
+
+### Claim (Insurance Submission)
+```json
+{
+  "resourceType": "Claim",
+  "id": "claim-001",
+  "status": "active",
+  "type": { "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/claim-type", "code": "professional" }] },
+  "use": "claim",
+  "patient": { "reference": "Patient/patient-123" },
+  "created": "2026-01-06",
+  "insurer": { "reference": "Organization/insurer-001" },
+  "provider": { "reference": "Practitioner/practitioner-456" },
+  "diagnosis": [{ "sequence": 1, "diagnosisCodeableConcept": { "coding": [{ "system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "F32.1" }] } }],
+  "procedure": [{ "sequence": 1, "procedureCodeableConcept": { "coding": [{ "system": "http://www.ama-assn.org/cpt", "code": "90834" }] }, "date": "2026-01-05" }],
+  "insurance": [{ "sequence": 1, "focal": true, "coverage": { "reference": "Coverage/coverage-789" } }],
+  "item": [{ "sequence": 1, "productOrService": { "coding": [{ "system": "http://www.ama-assn.org/cpt", "code": "90834" }] }, "diagnosisSequence": [1], "net": { "value": 150.00, "currency": "USD" } }],
+  "total": { "value": 150.00, "currency": "USD" }
+}
+```
+
+### ClaimResponse (Payer Adjudication)
+```json
+{
+  "resourceType": "ClaimResponse",
+  "id": "response-001",
+  "status": "active",
+  "outcome": "complete",
+  "patient": { "reference": "Patient/patient-123" },
+  "insurer": { "reference": "Organization/insurer-001" },
+  "request": { "reference": "Claim/claim-001" },
+  "payment": { "amount": { "value": 120.00, "currency": "USD" }, "date": "2026-01-10" },
+  "error": []
+}
+```
+
+### Full picture
+- Patient: John Doe, male, born 2003
+- Encounter: Ambulatory visit on 2026-01-05
+- Condition: ICD-10 F32.1 major depressive disorder
+- Procedure: CPT 90834 psychotherapy
+- Medication: RxNorm acetaminophen order
+- Observation: LOINC 718-7 hemoglobin result
+- Coverage: Active plan
+- Claim: Submitted for $150
+- ClaimResponse: Approved, paid $120
+
 ## Prerequisites
 
 - Python 3.11 or higher
