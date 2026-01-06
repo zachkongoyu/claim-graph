@@ -56,6 +56,33 @@ An intelligent Revenue Cycle Management (RCM) agent built with LangGraph and Rob
 - **Mock LLM Support**: Development-friendly with mock responses (TODO: add real LLM integration)
 - **Synthetic Data**: Built-in test data generator for end-to-end testing
 
+## Minimal FHIR Resource Schema for RCM
+
+The agent should support the following R4 resources end-to-end, covering clinical inputs, coding, claims submission, and adjudication.
+
+| Resource | Purpose | Key Fields |
+| --- | --- | --- |
+| Patient | Demographics | id, name, gender, birthDate, address, language |
+| Coverage | Insurance details | payor, policyNumber, coveragePeriod, subscriberId |
+| Encounter | Visit/interaction with provider | id, type, date, location, provider |
+| Condition | Diagnoses (ICD-10-CM) | code, onsetDate, clinicalStatus, verificationStatus |
+| Procedure | Services performed (CPT/HCPCS) | code, performedDate, performer, location |
+| MedicationRequest / MedicationStatement | Prescriptions (RxNorm) | medicationCodeableConcept, dosage, status |
+| Observation | Labs & screenings (LOINC) | code, value, unit, effectiveDateTime |
+| Claim | Insurance claim submission | id, patient, provider, diagnosis, procedure, item, total |
+| ClaimResponse | Payer adjudication | status, outcome, paymentAmount, errorCodes |
+
+### Data sources and rule sets
+- Synthetic clinical data: Synthea 1M Patients (FHIR R4), MIMIC-IV on FHIR demo, FHIR-AgentBench
+- Coding standards: ICD-10-CM 2026, CPT/HCPCS 2026, LOINC, RxNorm (UMLS)
+- Payer and claims rules: CMS Public Use Files, QRDA III 2026 IG, Medicare Physician Fee Schedule CY 2026 Final Rule
+
+### Flow alignment
+1) Ingest synthetic FHIR data (Patient, Encounter, Observation, Condition, Procedure)
+2) Map to codes (ICD-10, CPT/HCPCS, LOINC, RxNorm)
+3) Generate Claim resources with line items, charges, and provider info
+4) Validate against payer rules and produce ClaimResponse adjudication
+
 ## Prerequisites
 
 - Python 3.11 or higher
